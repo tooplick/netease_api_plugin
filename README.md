@@ -28,7 +28,7 @@ cp -r netease_api_plugin /path/to/nekro-agent/plugins/workdir/
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `api_base_url` | `https://163api.qijieya.cn` | 网易云 NodeJS API 地址 |
-| `cover_size` | `300` | 封面尺寸 (0/150/300/500/800) |
+| `cover_size` | `500` | 封面尺寸 (0/150/300/500/800) |
 | `enable_json_card` | `true` | 启用音乐卡片 |
 
 ## 🚀 使用
@@ -36,11 +36,11 @@ cp -r netease_api_plugin /path/to/nekro-agent/plugins/workdir/
 AI 会自动调用 `send_netease_music` 方法：
 
 ```python
-await send_netease_music("onebot_v11-group_123456", "周杰伦 晴天")
+await send_netease_music("onebot_v11-group_123456", "红蔷薇白玫瑰")
 ```
 
 或通过对话触发：
-> 用户: 播放周杰伦的晴天
+> 用户: 播放红蔷薇白玫瑰
 
 ## 📁 目录结构
 
