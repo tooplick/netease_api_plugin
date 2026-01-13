@@ -4,13 +4,11 @@ import httpx
 from typing import Literal, Optional
 
 from pydantic import Field
-from nekro_agent.api.plugin import NekroPlugin, SandboxMethodType, ConfigBase, ExtraField
+from nekro_agent.api.plugin import NekroPlugin, SandboxMethodType, ConfigBase
 from nekro_agent.api.schemas import AgentCtx
 from nekro_agent.api import core
 
-from .search import search_song
-from .song import get_song_url
-from .utils.common import format_artists, get_cover_url, get_song_info_text
+from .search import search_song, get_song_url, get_cover_url
 from .utils.network import set_api_base_url, close_api
 from .exceptions import NetEaseAPIError
 
@@ -18,11 +16,11 @@ from .exceptions import NetEaseAPIError
 # 创建插件实例
 plugin = NekroPlugin(
     name="网易云点歌",
-    module_name="netease-api-plugin",
+    module_name="netease_api_plugin",
     description="给予AI助手通过网易云音乐搜索并发送音乐消息的能力",
     version="1.0.0",
     author="Tooplick",
-    url="https://github.com/tooplick/netease-api-plugin",
+    url="https://github.com/tooplick/netease_api_plugin",
 )
 
 
@@ -33,36 +31,29 @@ class NetEasePluginConfig(ConfigBase):
     api_base_url: str = Field(
         default="https://163api.qijieya.cn",
         title="API 服务地址",
-        description="网易云音乐 API 服务基础地址。可使用公开服务或自建服务。",
+        description="网易云音乐 NodeJS API 服务基础地址",
     )
     
     cover_size: Literal["0", "150", "300", "500", "800"] = Field(
-        default="300",
+        default="500",
         title="专辑封面尺寸",
         description="发送封面图片的尺寸，0 表示不发送封面",
-    )
-    
-    audio_quality: Literal["standard", "higher", "exhigh", "lossless", "hires"] = Field(
-        default="standard",
-        title="音质等级",
-        description="歌曲音质等级：standard(标准), higher(较高), exhigh(极高), lossless(无损), hires(Hi-Res)",
     )
     
     enable_json_card: bool = Field(
         default=True,
         title="启用音乐卡片",
-        description="使用网易云音乐JSON卡片发送歌曲信息（需API支持，失败时自动降级）",
+        description="使用网易云音乐JSON卡片发送歌曲信息（失败时自动降级）",
     )
 
 
-# 获取配置实例
 config: NetEasePluginConfig = plugin.get_config(NetEasePluginConfig)
 
 
 @plugin.mount_init_method()
 async def init_plugin():
     """初始化插件"""
-    core.logger.info(f"网易云点歌插件正在初始化...")
+    core.logger.info("网易云点歌插件正在初始化...")
     set_api_base_url(config.api_base_url)
     core.logger.success(f"网易云点歌插件初始化完成，API 地址: {config.api_base_url}")
 
@@ -76,14 +67,7 @@ async def cleanup_plugin():
 
 
 def parse_chat_key(chat_key: str) -> tuple[str, str, int]:
-    """解析 chat_key
-    
-    Args:
-        chat_key: 会话标识，如 "onebot_v11-private_12345678"
-    
-    Returns:
-        (adapter, chat_type, target_id) 元组
-    """
+    """解析 chat_key"""
     parts = chat_key.split("-", 1)
     adapter = parts[0]
     chat_info = parts[1] if len(parts) > 1 else ""
@@ -99,11 +83,7 @@ def parse_chat_key(chat_key: str) -> tuple[str, str, int]:
 
 
 async def send_message(bot, chat_type: str, target_id: int, message) -> bool:
-    """发送消息到指定会话
-    
-    Returns:
-        bool: 是否发送成功
-    """
+    """发送消息到指定会话"""
     try:
         if chat_type == "private":
             await bot.send_private_msg(user_id=target_id, message=message)
@@ -122,18 +102,7 @@ async def get_signed_ark_card(
     cover_url: str,
     music_url: str
 ) -> Optional[str]:
-    """通过 API 获取签名的网易云音乐 JSON Ark 卡片数据
-    
-    Args:
-        song_id: 歌曲 ID
-        song_name: 歌曲名称
-        artist: 歌手名称
-        cover_url: 封面 URL
-        music_url: 音乐播放 URL
-    
-    Returns:
-        签名后的 JSON 字符串，失败返回 None
-    """
+    """通过 API 获取签名的网易云音乐 JSON Ark 卡片数据"""
     try:
         web_jump_url = f"https://music.163.com/#/song?id={song_id}"
         
@@ -143,7 +112,7 @@ async def get_signed_ark_card(
             "song": song_name,
             "singer": artist,
             "cover": cover_url if cover_url else "",
-            "format": "163"  # 网易云格式
+            "format": "163"
         }
         
         api_url = "https://oiapi.net/api/QQMusicJSONArk"
@@ -189,20 +158,22 @@ async def send_netease_music(
     try:
         core.logger.info(f"正在搜索网易云音乐: {keyword}")
         
-        # 1. 搜索歌曲
+        # 1. 通过网易云 API 搜索歌曲
         song = await search_song(keyword)
         song_id = song.get("id")
         song_name = song.get("name", "未知歌曲")
-        artists = format_artists(song.get("ar", []))
+        artists = song.get("artists", "未知")
         
         core.logger.info(f"找到歌曲: {song_name} - {artists} (ID: {song_id})")
         
-        # 2. 获取歌曲播放链接
-        song_url = await get_song_url(song_id, config.audio_quality)
+        # 2. 通过 NodeJS API 获取完整播放链接
+        song_url = await get_song_url(song_id)
         core.logger.info(f"获取到播放链接: {song_url[:50]}...")
         
-        # 3. 获取封面 URL
-        cover_url = get_cover_url(song, 500)  # 卡片使用 500 尺寸
+        # 3. 通过 Meting API 获取封面
+        cover_url = await get_cover_url(song_id)
+        if cover_url:
+            core.logger.info(f"获取到封面链接")
         
         # 4. 解析 chat_key 并获取 bot
         adapter, chat_type, target_id = parse_chat_key(chat_key)
@@ -238,17 +209,22 @@ async def send_netease_music(
             return f"歌曲《{song_name}》卡片已发送"
         
         # 7. 降级：发送文字 + 封面 + 语音
-        info_text = get_song_info_text(song)
+        info_text = f"🎵 {song_name}\n🎤 歌手: {artists}"
         await send_message(bot, chat_type, target_id, info_text)
         
         # 发送封面
         cover_size = int(config.cover_size)
-        if cover_size > 0:
-            msg_cover_url = get_cover_url(song, cover_size)
-            if msg_cover_url:
-                from nonebot.adapters.onebot.v11 import MessageSegment
-                cover_msg = MessageSegment.image(msg_cover_url)
-                await send_message(bot, chat_type, target_id, cover_msg)
+        if cover_size > 0 and cover_url:
+            # 替换封面尺寸参数
+            if "?param=" in cover_url:
+                # 替换已有的尺寸参数
+                import re
+                sized_cover = re.sub(r'\?param=\d+y\d+', f'?param={cover_size}y{cover_size}', cover_url)
+            else:
+                sized_cover = f"{cover_url}?param={cover_size}y{cover_size}"
+            from nonebot.adapters.onebot.v11 import MessageSegment
+            cover_msg = MessageSegment.image(sized_cover)
+            await send_message(bot, chat_type, target_id, cover_msg)
         
         # 发送语音
         if song_url:
@@ -264,4 +240,3 @@ async def send_netease_music(
     except Exception as e:
         core.logger.error(f"点歌失败: {e}")
         return f"点歌失败: {str(e)}"
-

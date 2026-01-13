@@ -11,11 +11,14 @@ class NetEaseAPI:
     
     DEFAULT_TIMEOUT = 10.0
     
-    def __init__(self, base_url: str = "https://music-api.focalors.ltd"):
+    # Meting API（用于获取封面）
+    METING_API = "https://api.qijieya.cn/meting/"
+    
+    def __init__(self, base_url: str = "https://163api.qijieya.cn"):
         """初始化 API 客户端
         
         Args:
-            base_url: API 服务基础地址
+            base_url: 网易云 NodeJS API 服务基础地址
         """
         self.base_url = base_url.rstrip("/")
         self._client: httpx.AsyncClient | None = None
@@ -25,10 +28,9 @@ class NetEaseAPI:
         """获取 HTTP 客户端实例"""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
-                base_url=self.base_url,
                 timeout=self.DEFAULT_TIMEOUT,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
                 }
             )
         return self._client
@@ -39,33 +41,6 @@ class NetEaseAPI:
             await self._client.aclose()
             self._client = None
     
-    async def request(self, endpoint: str, params: dict[str, Any] | None = None) -> dict:
-        """发送 API 请求
-        
-        Args:
-            endpoint: API 端点路径
-            params: 请求参数
-        
-        Returns:
-            API 响应数据
-        
-        Raises:
-            NetEaseAPIError: 请求失败时抛出
-        """
-        try:
-            resp = await self.client.get(endpoint, params=params or {})
-            resp.raise_for_status()
-            data = resp.json()
-            
-            # 检查 API 返回码
-            code = data.get("code", 200)
-            if code != 200:
-                raise NetEaseAPIError(f"API 返回错误: code={code}", data)
-            
-            return data
-        except httpx.HTTPError as e:
-            raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
-    
     async def search(
         self, 
         keywords: str, 
@@ -73,51 +48,87 @@ class NetEaseAPI:
         limit: int = 1,
         offset: int = 0
     ) -> dict:
-        """搜索歌曲
+        """通过网易云 API 搜索歌曲"""
+        try:
+            url = f"{self.base_url}/cloudsearch"
+            params = {
+                "keywords": keywords,
+                "type": type,
+                "limit": limit,
+                "offset": offset
+            }
+            resp = await self.client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            code = data.get("code", 200)
+            if code != 200:
+                raise NetEaseAPIError(f"API 返回错误: code={code}", data)
+            
+            return data
+        except httpx.HTTPError as e:
+            raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
+
+    async def get_song_url(self, song_id: int) -> str:
+        """通过 NodeJS API 获取歌曲播放链接（完整歌曲）
+        
+        和原项目 ncm_nodejs.py 一致：使用 /song/url?id=xxx
         
         Args:
-            keywords: 搜索关键词
-            type: 搜索类型 (1=歌曲, 10=专辑, 100=歌手, 1000=歌单)
-            limit: 返回数量
-            offset: 偏移量
+            song_id: 歌曲 ID
         
         Returns:
-            搜索结果
+            歌曲播放 URL
         """
-        return await self.request("/cloudsearch", {
-            "keywords": keywords,
-            "type": type,
-            "limit": limit,
-            "offset": offset
-        })
-    
-    async def song_detail(self, ids: list[int]) -> dict:
-        """获取歌曲详情
+        try:
+            url = f"{self.base_url}/song/url"
+            params = {"id": song_id}
+            resp = await self.client.get(url, params=params)
+            resp.raise_for_status()
+            result = resp.json()
+            
+            data = result.get("data", [])
+            if data and len(data) > 0:
+                audio_url = data[0].get("url")
+                if audio_url:
+                    return audio_url
+            
+            raise NetEaseAPIError(f"未获取到歌曲链接")
+        except NetEaseAPIError:
+            raise
+        except httpx.HTTPError as e:
+            raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
+        except Exception as e:
+            raise NetEaseAPIError(f"获取歌曲链接失败: {e}") from e
+
+    async def get_cover_url(self, song_id: int) -> str:
+        """通过 Meting API 获取封面链接（跟随重定向获取真实 URL）
         
         Args:
-            ids: 歌曲 ID 列表
+            song_id: 歌曲 ID
         
         Returns:
-            歌曲详情
+            封面真实 URL（网易云 CDN 地址）
         """
-        return await self.request("/song/detail", {
-            "ids": ",".join(map(str, ids))
-        })
-    
-    async def song_url(self, ids: list[int], level: str = "standard") -> dict:
-        """获取歌曲播放链接
-        
-        Args:
-            ids: 歌曲 ID 列表
-            level: 音质等级 (standard, higher, exhigh, lossless, hires)
-        
-        Returns:
-            包含播放链接的响应
-        """
-        return await self.request("/song/url/v1", {
-            "id": ",".join(map(str, ids)),
-            "level": level
-        })
+        try:
+            url = f"{self.METING_API}?type=song&id={song_id}"
+            resp = await self.client.get(url)
+            resp.raise_for_status()
+            result = resp.json()
+            
+            if isinstance(result, list) and len(result) > 0:
+                pic_redirect = result[0].get("pic", "")
+                if pic_redirect:
+                    # 跟随重定向获取真实封面 URL
+                    async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as redirect_client:
+                        pic_resp = await redirect_client.get(pic_redirect)
+                        # 返回最终 URL
+                        return str(pic_resp.url)
+            
+            return ""
+        except Exception as e:
+            # 封面获取失败不抛异常，返回空字符串
+            return ""
 
 
 # 全局 API 实例
@@ -125,17 +136,10 @@ _api_instance: NetEaseAPI | None = None
 
 
 def get_api(base_url: str | None = None) -> NetEaseAPI:
-    """获取 API 实例
-    
-    Args:
-        base_url: 可选的 API 基础地址，首次调用时设置
-    
-    Returns:
-        NetEaseAPI 实例
-    """
+    """获取 API 实例"""
     global _api_instance
     if _api_instance is None:
-        _api_instance = NetEaseAPI(base_url or "https://music-api.focalors.ltd")
+        _api_instance = NetEaseAPI(base_url or "https://163api.qijieya.cn")
     return _api_instance
 
 
