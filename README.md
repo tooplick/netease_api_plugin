@@ -18,6 +18,7 @@
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `cover_size` | `500` | 封面尺寸 (0/150/300/500/800)，0 表示不发送封面 |
+| `audio_quality` | `hires` | standard=标准, exhigh=极高, lossless=无损, hires=Hi-Res, jymaster=超清母带 |
 | `enable_json_card` | `true` | 启用音乐卡片（失败时自动降级为文字+封面+语音） |
 | `use_external_player` | `false` | 卡片链接使用外部播放器 |
 | `external_player_url` | `player.ygking.top` | 外部播放器地址 |
@@ -50,8 +51,7 @@ netease_api_plugin/
 
 ## 🔌 API 来源
 
-- **搜索/音频**: [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)
-- **封面**: [Meting API](https://github.com/metowolf/Meting)
+- **搜索/音频/封面**: [Kxzjoker API](https://api.kxzjoker.cn)
 - **卡片签名**: [OiAPI](https://oiapi.net/)
 
 ## 👤 作者
