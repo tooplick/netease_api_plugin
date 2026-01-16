@@ -42,7 +42,7 @@ class NetEasePluginConfig(ConfigBase):
     
     use_external_player: bool = Field(
         default=False,
-        title="卡片主链接使用外部播放器",
+        title="卡片链接使用外部播放器",
         description="开启后，音乐卡片的主链接将跳转到外部播放器而非网易云官网",
     )
     
@@ -116,13 +116,13 @@ def build_jump_url(
         if not base_url.startswith("http"):
             base_url = f"https://{base_url}"
         
-        # 构建外部播放器 URL 参数
+        # 构建外部播放器 URL 参数（显式使用 UTF-8 编码）
         params = [
-            f"title={quote(song_name)}",
-            f"artist={quote(artist)}",
-            f"cover={quote(cover_url)}",
-            f"audio={quote(music_url)}",
-            f"detail={quote(f'https://music.163.com/#/song?id={song_id}')}"
+            f"title={quote(str(song_name), encoding='utf-8', safe='')}",
+            f"artist={quote(str(artist), encoding='utf-8', safe='')}",
+            f"cover={quote(str(cover_url), encoding='utf-8', safe='')}",
+            f"audio={quote(str(music_url), encoding='utf-8', safe='')}",
+            f"detail={quote(f'https://music.163.com/#/song?id={song_id}', encoding='utf-8', safe='')}"
         ]
         return f"{base_url}/?{'&'.join(params)}"
     else:
