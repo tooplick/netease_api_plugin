@@ -61,6 +61,8 @@ class NetEaseAPI:
                 "offset": offset
             }
             resp = await self.client.get(url, params=params)
+             # 强制使用 UTF-8 编码，防止中文乱码
+            resp.encoding = "utf-8"
             resp.raise_for_status()
             data = resp.json()
             
@@ -88,6 +90,8 @@ class NetEaseAPI:
             url = f"{self.base_url}/song/url"
             params = {"id": song_id}
             resp = await self.client.get(url, params=params)
+             # 强制使用 UTF-8 编码
+            resp.encoding = "utf-8"
             resp.raise_for_status()
             result = resp.json()
             
@@ -118,6 +122,8 @@ class NetEaseAPI:
         try:
             url = f"{METING_API}?type=song&id={song_id}"
             resp = await self.client.get(url)
+             # 强制使用 UTF-8 编码
+            resp.encoding = "utf-8"
             resp.raise_for_status()
             result = resp.json()
             
