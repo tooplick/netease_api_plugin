@@ -18,7 +18,7 @@ plugin = NekroPlugin(
     name="网易云点歌",
     module_name="netease_api_plugin",
     description="给予AI助手通过网易云音乐搜索并发送音乐消息的能力",
-    version="1.1.0",
+    version="1.1.1",
     author="GeQian",
     url="https://github.com/tooplick/netease_api_plugin",
 )
@@ -160,8 +160,8 @@ def build_jump_url(
              
         # 确保编码为 UTF-8
         try:
-            quoted_title = quote(clean_title, encoding='utf-8', safe='')
-            quoted_artist = quote(clean_artist, encoding='utf-8', safe='')
+            quoted_title = quote(quote(clean_title, encoding='utf-8', safe=''), safe='')
+            quoted_artist = quote(quote(clean_artist, encoding='utf-8', safe=''), safe='')
             quoted_cover = quote(str(cover_url), encoding='utf-8', safe='')
             quoted_audio = quote(str(music_url), encoding='utf-8', safe='')
             quoted_detail = quote(f'https://music.163.com/#/song?id={song_id}', encoding='utf-8', safe='')
