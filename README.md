@@ -27,7 +27,7 @@
 AI 会自动调用 `send_netease_music` 方法：
 
 ```python
-await send_netease_music("onebot_v11-group_123456", "红蔷薇白玫瑰")
+/exec send_netease_music("onebot_v11-group_123456", "红蔷薇白玫瑰")
 # 返回: "歌曲《红蔷薇白玫瑰》卡片已发送"
 ```
 
