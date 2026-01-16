@@ -1,9 +1,13 @@
 """网易云音乐 API 网络请求封装"""
 
-import httpx
 from typing import Any
 
 from ..exceptions import NetEaseAPIError
+
+
+# 固定的 API 基础地址
+API_BASE_URL = "https://163api.qijieya.cn"
+METING_API = "https://api.qijieya.cn/meting/"
 
 
 class NetEaseAPI:
@@ -11,22 +15,20 @@ class NetEaseAPI:
     
     DEFAULT_TIMEOUT = 10.0
     
-    # Meting API（用于获取封面）
-    METING_API = "https://api.qijieya.cn/meting/"
-    
-    def __init__(self, base_url: str = "https://163api.qijieya.cn"):
+    def __init__(self, base_url: str = API_BASE_URL):
         """初始化 API 客户端
         
         Args:
             base_url: 网易云 NodeJS API 服务基础地址
         """
         self.base_url = base_url.rstrip("/")
-        self._client: httpx.AsyncClient | None = None
+        self._client = None
     
     @property
-    def client(self) -> httpx.AsyncClient:
-        """获取 HTTP 客户端实例"""
-        if self._client is None or self._client.is_closed:
+    def client(self):
+        """获取 HTTP 客户端实例（延迟导入 httpx）"""
+        if self._client is None:
+            import httpx
             self._client = httpx.AsyncClient(
                 timeout=self.DEFAULT_TIMEOUT,
                 headers={
@@ -49,6 +51,7 @@ class NetEaseAPI:
         offset: int = 0
     ) -> dict:
         """通过网易云 API 搜索歌曲"""
+        import httpx
         try:
             url = f"{self.base_url}/cloudsearch"
             params = {
@@ -80,6 +83,7 @@ class NetEaseAPI:
         Returns:
             歌曲播放 URL
         """
+        import httpx
         try:
             url = f"{self.base_url}/song/url"
             params = {"id": song_id}
@@ -110,8 +114,9 @@ class NetEaseAPI:
         Returns:
             封面真实 URL（网易云 CDN 地址）
         """
+        import httpx
         try:
-            url = f"{self.METING_API}?type=song&id={song_id}"
+            url = f"{METING_API}?type=song&id={song_id}"
             resp = await self.client.get(url)
             resp.raise_for_status()
             result = resp.json()
@@ -139,14 +144,8 @@ def get_api(base_url: str | None = None) -> NetEaseAPI:
     """获取 API 实例"""
     global _api_instance
     if _api_instance is None:
-        _api_instance = NetEaseAPI(base_url or "https://163api.qijieya.cn")
+        _api_instance = NetEaseAPI(base_url or API_BASE_URL)
     return _api_instance
-
-
-def set_api_base_url(base_url: str):
-    """设置 API 基础地址（会重新创建实例）"""
-    global _api_instance
-    _api_instance = NetEaseAPI(base_url)
 
 
 async def close_api():

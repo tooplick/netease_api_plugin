@@ -1,7 +1,7 @@
 """网易云音乐点歌插件"""
 
-import httpx
 from typing import Literal, Optional
+from urllib.parse import quote
 
 from pydantic import Field
 from nekro_agent.api.plugin import NekroPlugin, SandboxMethodType, ConfigBase
@@ -9,7 +9,7 @@ from nekro_agent.api.schemas import AgentCtx
 from nekro_agent.api import core
 
 from .search import search_song, get_song_url, get_cover_url
-from .utils.network import set_api_base_url, close_api
+from .utils.network import get_api, close_api
 from .exceptions import NetEaseAPIError
 
 
@@ -18,7 +18,7 @@ plugin = NekroPlugin(
     name="网易云点歌",
     module_name="netease_api_plugin",
     description="给予AI助手通过网易云音乐搜索并发送音乐消息的能力",
-    version="1.0.0",
+    version="1.1.0",
     author="GeQian",
     url="https://github.com/tooplick/netease_api_plugin",
 )
@@ -27,12 +27,6 @@ plugin = NekroPlugin(
 @plugin.mount_config()
 class NetEasePluginConfig(ConfigBase):
     """网易云音乐插件配置项"""
-    
-    api_base_url: str = Field(
-        default="https://163api.qijieya.cn",
-        title="API 服务地址",
-        description="网易云音乐 NodeJS API 服务基础地址",
-    )
     
     cover_size: Literal["0", "150", "300", "500", "800"] = Field(
         default="500",
@@ -45,6 +39,18 @@ class NetEasePluginConfig(ConfigBase):
         title="启用音乐卡片",
         description="使用网易云音乐JSON卡片发送歌曲信息（失败时自动降级）",
     )
+    
+    use_external_player: bool = Field(
+        default=False,
+        title="卡片主链接使用外部播放器",
+        description="开启后，音乐卡片的主链接将跳转到外部播放器而非网易云官网",
+    )
+    
+    external_player_url: str = Field(
+        default="player.ygking.top",
+        title="外部播放器地址",
+        description="外部播放器的域名地址",
+    )
 
 
 config: NetEasePluginConfig = plugin.get_config(NetEasePluginConfig)
@@ -54,8 +60,9 @@ config: NetEasePluginConfig = plugin.get_config(NetEasePluginConfig)
 async def init_plugin():
     """初始化插件"""
     core.logger.info("网易云点歌插件正在初始化...")
-    set_api_base_url(config.api_base_url)
-    core.logger.success(f"网易云点歌插件初始化完成，API 地址: {config.api_base_url}")
+    # 使用固定的 API 地址
+    get_api("https://163api.qijieya.cn")
+    core.logger.success("网易云点歌插件初始化完成，API 地址: https://163api.qijieya.cn")
 
 
 @plugin.mount_cleanup_method()
@@ -95,6 +102,34 @@ async def send_message(bot, chat_type: str, target_id: int, message) -> bool:
         return False
 
 
+def build_jump_url(
+    song_id: int,
+    song_name: str,
+    artist: str,
+    cover_url: str,
+    music_url: str
+) -> str:
+    """根据配置生成跳转 URL"""
+    if config.use_external_player:
+        # 使用外部播放器
+        base_url = config.external_player_url.rstrip("/")
+        if not base_url.startswith("http"):
+            base_url = f"https://{base_url}"
+        
+        # 构建外部播放器 URL 参数
+        params = [
+            f"title={quote(song_name)}",
+            f"artist={quote(artist)}",
+            f"cover={quote(cover_url)}",
+            f"audio={quote(music_url)}",
+            f"detail={quote(f'https://music.163.com/#/song?id={song_id}')}"
+        ]
+        return f"{base_url}/?{'&'.join(params)}"
+    else:
+        # 使用网易云官网
+        return f"https://music.163.com/#/song?id={song_id}"
+
+
 async def get_signed_ark_card(
     song_id: int,
     song_name: str,
@@ -103,12 +138,15 @@ async def get_signed_ark_card(
     music_url: str
 ) -> Optional[str]:
     """通过 API 获取签名的网易云音乐 JSON Ark 卡片数据"""
+    import httpx
+    
     try:
-        web_jump_url = f"https://music.163.com/#/song?id={song_id}"
+        # 根据配置生成跳转 URL
+        jump_url = build_jump_url(song_id, song_name, artist, cover_url, music_url)
         
         data = {
             "url": music_url,
-            "jump": web_jump_url,
+            "jump": jump_url,
             "song": song_name,
             "singer": artist,
             "cover": cover_url if cover_url else "",
