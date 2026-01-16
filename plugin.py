@@ -35,7 +35,7 @@ class NetEasePluginConfig(ConfigBase):
     )
     
     audio_quality: Literal["standard", "exhigh", "lossless", "hires", "jymaster"] = Field(
-        default="exhigh",
+        default="hires",
         title="音质选择",
         description="standard=标准, exhigh=极高, lossless=无损, hires=Hi-Res, jymaster=超清母带",
     )
