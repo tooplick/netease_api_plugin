@@ -19,7 +19,7 @@ plugin = NekroPlugin(
     module_name="netease_api_plugin",
     description="给予AI助手通过网易云音乐搜索并发送音乐消息的能力",
     version="1.0.0",
-    author="Tooplick",
+    author="GeQian",
     url="https://github.com/tooplick/netease_api_plugin",
 )
 
