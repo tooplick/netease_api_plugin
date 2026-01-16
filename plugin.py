@@ -154,6 +154,7 @@ async def send_netease_music(
     Example:
         >>> send_netease_music("onebot_v11-group_123456", "周杰伦 晴天")
         "歌曲《晴天》已发送"
+        点击音乐卡片封面即可播放歌曲
     """
     try:
         core.logger.info(f"正在搜索网易云音乐: {keyword}")
