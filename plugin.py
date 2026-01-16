@@ -133,7 +133,7 @@ async def get_signed_ark_card(
 
 
 @plugin.mount_sandbox_method(
-    SandboxMethodType.TOOL,
+    SandboxMethodType.AGENT,
     "send_netease_music",
     "搜索网易云音乐并发送歌曲"
 )
