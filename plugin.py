@@ -102,6 +102,26 @@ async def send_message(bot, chat_type: str, target_id: int, message) -> bool:
         return False
 
 
+def clean_text(text: str) -> str:
+    """清理文本中的无效 Unicode 字符（如私用区字符、代理对等）"""
+    if not text:
+        return text
+    # 移除私用区字符 (U+E000-U+F8FF, U+F0000-U+FFFFD, U+100000-U+10FFFD)
+    # 移除代理对字符 (U+D800-U+DFFF)
+    # 保留常规 Unicode 字符
+    cleaned = []
+    for char in text:
+        code = ord(char)
+        # 跳过私用区和代理对
+        if (0xE000 <= code <= 0xF8FF or 
+            0xD800 <= code <= 0xDFFF or
+            0xF0000 <= code <= 0xFFFFD or
+            0x100000 <= code <= 0x10FFFD):
+            continue
+        cleaned.append(char)
+    return ''.join(cleaned)
+
+
 def build_jump_url(
     song_id: int,
     song_name: str,
@@ -116,10 +136,13 @@ def build_jump_url(
         if not base_url.startswith("http"):
             base_url = f"https://{base_url}"
         
-        # 构建外部播放器 URL 参数（显式使用 UTF-8 编码）
+        # 清理无效字符并构建 URL 参数
+        clean_title = clean_text(str(song_name))
+        clean_artist = clean_text(str(artist))
+        
         params = [
-            f"title={quote(str(song_name), encoding='utf-8', safe='')}",
-            f"artist={quote(str(artist), encoding='utf-8', safe='')}",
+            f"title={quote(clean_title, encoding='utf-8', safe='')}",
+            f"artist={quote(clean_artist, encoding='utf-8', safe='')}",
             f"cover={quote(str(cover_url), encoding='utf-8', safe='')}",
             f"audio={quote(str(music_url), encoding='utf-8', safe='')}",
             f"detail={quote(f'https://music.163.com/#/song?id={song_id}', encoding='utf-8', safe='')}"
