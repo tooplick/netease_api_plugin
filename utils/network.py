@@ -1,25 +1,39 @@
 """网易云音乐 API 网络请求封装"""
 
-from typing import Any
+from typing import Any, Optional
+from dataclasses import dataclass
 
 from ..exceptions import NetEaseAPIError
 
 
-# 固定的 API 基础地址
-API_BASE_URL = "https://163api.qijieya.cn"
-METING_API = "https://api.qijieya.cn/meting/"
+# 新 API 基础地址
+API_BASE_URL = "https://api.kxzjoker.cn"
+
+
+@dataclass
+class SongInfo:
+    """歌曲完整信息"""
+    id: int
+    name: str
+    artist: str
+    album: str
+    url: str
+    cover: str
+    level: str
+    size: str
+    lyric: str = ""
 
 
 class NetEaseAPI:
     """网易云音乐 API 客户端"""
     
-    DEFAULT_TIMEOUT = 10.0
+    DEFAULT_TIMEOUT = 15.0
     
     def __init__(self, base_url: str = API_BASE_URL):
         """初始化 API 客户端
         
         Args:
-            base_url: 网易云 NodeJS API 服务基础地址
+            base_url: API 服务基础地址
         """
         self.base_url = base_url.rstrip("/")
         self._client = None
@@ -46,22 +60,25 @@ class NetEaseAPI:
     async def search(
         self, 
         keywords: str, 
-        type: int = 1, 
         limit: int = 1,
-        offset: int = 0
     ) -> dict:
-        """通过网易云 API 搜索歌曲"""
+        """通过 API 搜索歌曲
+        
+        Args:
+            keywords: 搜索关键词
+            limit: 返回数量 (1-100)
+        
+        Returns:
+            搜索结果字典
+        """
         import httpx
         try:
-            url = f"{self.base_url}/cloudsearch"
+            url = f"{self.base_url}/api/163_search"
             params = {
-                "keywords": keywords,
-                "type": type,
-                "limit": limit,
-                "offset": offset
+                "name": keywords,
+                "limit": limit
             }
             resp = await self.client.get(url, params=params)
-             # 强制使用 UTF-8 编码，防止中文乱码
             resp.encoding = "utf-8"
             resp.raise_for_status()
             data = resp.json()
@@ -74,71 +91,87 @@ class NetEaseAPI:
         except httpx.HTTPError as e:
             raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
 
-    async def get_song_url(self, song_id: int) -> str:
-        """通过 NodeJS API 获取歌曲播放链接（完整歌曲）
-        
-        和原项目 ncm_nodejs.py 一致：使用 /song/url?id=xxx
+    async def get_song_info(
+        self, 
+        song_id: int,
+        level: str = "exhigh"
+    ) -> SongInfo:
+        """获取歌曲完整信息（URL、封面、歌词等）
         
         Args:
             song_id: 歌曲 ID
+            level: 音质等级 (standard/exhigh/lossless/hires/jymaster)
         
         Returns:
-            歌曲播放 URL
+            SongInfo 对象
         """
         import httpx
         try:
-            url = f"{self.base_url}/song/url"
-            params = {"id": song_id}
+            url = f"{self.base_url}/api/163_music"
+            params = {
+                "ids": song_id,
+                "level": level,
+                "type": "json"
+            }
             resp = await self.client.get(url, params=params)
-             # 强制使用 UTF-8 编码
             resp.encoding = "utf-8"
             resp.raise_for_status()
-            result = resp.json()
+            data = resp.json()
             
-            data = result.get("data", [])
-            if data and len(data) > 0:
-                audio_url = data[0].get("url")
-                if audio_url:
-                    return audio_url
+            status = data.get("status", 200)
+            if status != 200:
+                error_msg = data.get("msg", data.get("error", "未知错误"))
+                raise NetEaseAPIError(f"获取歌曲信息失败: {error_msg}", data)
             
-            raise NetEaseAPIError(f"未获取到歌曲链接")
+            song_url = data.get("url")
+            if not song_url:
+                raise NetEaseAPIError("未获取到歌曲播放链接")
+            
+            return SongInfo(
+                id=song_id,
+                name=data.get("name", "未知歌曲"),
+                artist=data.get("ar_name", "未知"),
+                album=data.get("al_name", ""),
+                url=song_url,
+                cover=data.get("pic", ""),
+                level=data.get("level", ""),
+                size=data.get("size", ""),
+                lyric=data.get("lyric", "")
+            )
         except NetEaseAPIError:
             raise
         except httpx.HTTPError as e:
             raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
         except Exception as e:
-            raise NetEaseAPIError(f"获取歌曲链接失败: {e}") from e
+            raise NetEaseAPIError(f"获取歌曲信息失败: {e}") from e
 
-    async def get_cover_url(self, song_id: int) -> str:
-        """通过 Meting API 获取封面链接（跟随重定向获取真实 URL）
+    async def get_song_url(self, song_id: int, level: str = "exhigh") -> str:
+        """获取歌曲播放链接
         
         Args:
             song_id: 歌曲 ID
+            level: 音质等级
         
         Returns:
-            封面真实 URL（网易云 CDN 地址）
+            歌曲播放 URL
         """
-        import httpx
+        info = await self.get_song_info(song_id, level)
+        return info.url
+
+    async def get_cover_url(self, song_id: int, level: str = "exhigh") -> str:
+        """获取封面链接
+        
+        Args:
+            song_id: 歌曲 ID
+            level: 音质等级（需要调用同一接口）
+        
+        Returns:
+            封面 URL
+        """
         try:
-            url = f"{METING_API}?type=song&id={song_id}"
-            resp = await self.client.get(url)
-             # 强制使用 UTF-8 编码
-            resp.encoding = "utf-8"
-            resp.raise_for_status()
-            result = resp.json()
-            
-            if isinstance(result, list) and len(result) > 0:
-                pic_redirect = result[0].get("pic", "")
-                if pic_redirect:
-                    # 跟随重定向获取真实封面 URL
-                    async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as redirect_client:
-                        pic_resp = await redirect_client.get(pic_redirect)
-                        # 返回最终 URL
-                        return str(pic_resp.url)
-            
-            return ""
-        except Exception as e:
-            # 封面获取失败不抛异常，返回空字符串
+            info = await self.get_song_info(song_id, level)
+            return info.cover
+        except Exception:
             return ""
 
 

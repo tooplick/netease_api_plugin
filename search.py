@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from .utils.network import get_api
+from .utils.network import get_api, SongInfo
 from .exceptions import SearchError, SongNotFoundError
 
 
@@ -14,12 +14,12 @@ def format_artists(artists: list[dict]) -> str:
 
 
 async def search_song(keyword: str) -> dict[str, Any]:
-    """通过网易云 API 搜索歌曲（返回第一个结果）"""
+    """通过 API 搜索歌曲（返回第一个结果）"""
     try:
         api = get_api()
-        result = await api.search(keyword, type=1, limit=1)
+        result = await api.search(keyword, limit=1)
         
-        songs = result.get("result", {}).get("songs", [])
+        songs = result.get("data", [])
         if not songs:
             raise SongNotFoundError(f"未找到歌曲: {keyword}")
         
@@ -27,9 +27,9 @@ async def search_song(keyword: str) -> dict[str, Any]:
         return {
             "id": song.get("id"),
             "name": song.get("name", "未知歌曲"),
-            "artists": format_artists(song.get("ar", [])),
-            "album": song.get("al", {}).get("name", ""),
-            "duration": song.get("dt", 0),
+            "artists": format_artists(song.get("artists", [])),
+            "album": song.get("album", {}).get("name", ""),
+            "duration": song.get("duration", ""),
         }
     except SongNotFoundError:
         raise
@@ -37,13 +37,19 @@ async def search_song(keyword: str) -> dict[str, Any]:
         raise SearchError(f"搜索失败: {e}") from e
 
 
-async def get_song_url(song_id: int) -> str:
-    """通过 NodeJS API 获取完整歌曲播放链接"""
+async def get_song_info(song_id: int, level: str = "exhigh") -> SongInfo:
+    """获取歌曲完整信息（URL、封面、歌词等）"""
     api = get_api()
-    return await api.get_song_url(song_id)
+    return await api.get_song_info(song_id, level)
 
 
-async def get_cover_url(song_id: int) -> str:
-    """通过 Meting API 获取封面链接"""
+async def get_song_url(song_id: int, level: str = "exhigh") -> str:
+    """获取歌曲播放链接"""
     api = get_api()
-    return await api.get_cover_url(song_id)
+    return await api.get_song_url(song_id, level)
+
+
+async def get_cover_url(song_id: int, level: str = "exhigh") -> str:
+    """获取封面链接"""
+    api = get_api()
+    return await api.get_cover_url(song_id, level)

@@ -8,7 +8,7 @@ from nekro_agent.api.plugin import NekroPlugin, SandboxMethodType, ConfigBase
 from nekro_agent.api.schemas import AgentCtx
 from nekro_agent.api import core
 
-from .search import search_song, get_song_url, get_cover_url
+from .search import search_song, get_song_info
 from .utils.network import get_api, close_api
 from .exceptions import NetEaseAPIError
 
@@ -18,7 +18,7 @@ plugin = NekroPlugin(
     name="网易云点歌",
     module_name="netease_api_plugin",
     description="给予AI助手通过网易云音乐搜索并发送音乐消息的能力",
-    version="1.1.1",
+    version="1.2.0",
     author="GeQian",
     url="https://github.com/tooplick/netease_api_plugin",
 )
@@ -32,6 +32,12 @@ class NetEasePluginConfig(ConfigBase):
         default="500",
         title="专辑封面尺寸",
         description="发送封面图片的尺寸，0 表示不发送封面",
+    )
+    
+    audio_quality: Literal["standard", "exhigh", "lossless", "hires", "jymaster"] = Field(
+        default="exhigh",
+        title="音质选择",
+        description="standard=标准, exhigh=极高, lossless=无损, hires=Hi-Res, jymaster=超清母带",
     )
     
     enable_json_card: bool = Field(
@@ -60,9 +66,9 @@ config: NetEasePluginConfig = plugin.get_config(NetEasePluginConfig)
 async def init_plugin():
     """初始化插件"""
     core.logger.info("网易云点歌插件正在初始化...")
-    # 使用固定的 API 地址
-    get_api("https://163api.qijieya.cn")
-    core.logger.success("网易云点歌插件初始化完成，API 地址: https://163api.qijieya.cn")
+    # 使用 kxzjoker API
+    get_api("https://api.kxzjoker.cn")
+    core.logger.success("网易云点歌插件初始化完成，API 地址: https://api.kxzjoker.cn")
 
 
 @plugin.mount_cleanup_method()
@@ -249,7 +255,7 @@ async def send_netease_music(
     try:
         core.logger.info(f"正在搜索网易云音乐: {keyword}")
         
-        # 1. 通过网易云 API 搜索歌曲
+        # 1. 通过 API 搜索歌曲
         song = await search_song(keyword)
         song_id = song.get("id")
         song_name = song.get("name", "未知歌曲")
@@ -257,14 +263,15 @@ async def send_netease_music(
         
         core.logger.info(f"找到歌曲: {song_name} - {artists} (ID: {song_id})")
         
-        # 2. 通过 NodeJS API 获取完整播放链接
-        song_url = await get_song_url(song_id)
-        core.logger.info(f"获取到播放链接: {song_url[:50]}...")
+        # 2. 获取歌曲完整信息（URL、封面等）
+        song_info = await get_song_info(song_id, config.audio_quality)
+        song_url = song_info.url
+        cover_url = song_info.cover
+        # 使用 API 返回的歌手信息（更准确）
+        if song_info.artist:
+            artists = song_info.artist
         
-        # 3. 通过 Meting API 获取封面
-        cover_url = await get_cover_url(song_id)
-        if cover_url:
-            core.logger.info(f"获取到封面链接")
+        core.logger.info(f"获取到播放链接: {song_url[:50]}... (音质: {song_info.level})")
         
         # 4. 解析 chat_key 并获取 bot
         adapter, chat_type, target_id = parse_chat_key(chat_key)
