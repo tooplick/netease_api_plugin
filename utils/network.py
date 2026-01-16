@@ -96,54 +96,69 @@ class NetEaseAPI:
         song_id: int,
         level: str = "exhigh"
     ) -> SongInfo:
-        """获取歌曲完整信息（URL、封面、歌词等）
+        """获取歌曲完整信息（URL、封面、歌词等），支持音质自动降级
         
         Args:
             song_id: 歌曲 ID
-            level: 音质等级 (standard/exhigh/lossless/hires/jymaster)
+            level: 首选音质等级 (standard/exhigh/lossless/hires/jymaster)
         
         Returns:
             SongInfo 对象
         """
         import httpx
+        
+        # 音质降级序列
+        QUALITY_LEVELS = ["jymaster", "hires", "lossless", "exhigh", "standard"]
+        
+        # 确定起始尝试位置
         try:
-            url = f"{self.base_url}/api/163_music"
-            params = {
-                "ids": song_id,
-                "level": level,
-                "type": "json"
-            }
-            resp = await self.client.get(url, params=params)
-            resp.encoding = "utf-8"
-            resp.raise_for_status()
-            data = resp.json()
+            start_idx = QUALITY_LEVELS.index(level)
+        except ValueError:
+            start_idx = QUALITY_LEVELS.index("exhigh")
             
-            status = data.get("status", 200)
-            if status != 200:
-                error_msg = data.get("msg", data.get("error", "未知错误"))
-                raise NetEaseAPIError(f"获取歌曲信息失败: {error_msg}", data)
-            
-            song_url = data.get("url")
-            if not song_url:
-                raise NetEaseAPIError("未获取到歌曲播放链接")
-            
-            return SongInfo(
-                id=song_id,
-                name=data.get("name", "未知歌曲"),
-                artist=data.get("ar_name", "未知"),
-                album=data.get("al_name", ""),
-                url=song_url,
-                cover=data.get("pic", ""),
-                level=data.get("level", ""),
-                size=data.get("size", ""),
-                lyric=data.get("lyric", "")
-            )
-        except NetEaseAPIError:
-            raise
-        except httpx.HTTPError as e:
-            raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
-        except Exception as e:
-            raise NetEaseAPIError(f"获取歌曲信息失败: {e}") from e
+        # 尝试的音质列表（从高到低）
+        levels_to_try = QUALITY_LEVELS[start_idx:]
+        
+        last_error = None
+        for current_level in levels_to_try:
+            try:
+                url = f"{self.base_url}/api/163_music"
+                params = {
+                    "ids": song_id,
+                    "level": current_level,
+                    "type": "json"
+                }
+                resp = await self.client.get(url, params=params)
+                resp.encoding = "utf-8"
+                resp.raise_for_status()
+                data = resp.json()
+                
+                status = data.get("status", 200)
+                if status != 200:
+                    continue # 尝试下一个音质
+                
+                song_url = data.get("url")
+                if not song_url:
+                    continue # 尝试下一个音质
+                
+                return SongInfo(
+                    id=song_id,
+                    name=data.get("name", "未知歌曲"),
+                    artist=data.get("ar_name", "未知"),
+                    album=data.get("al_name", ""),
+                    url=song_url,
+                    cover=data.get("pic", ""),
+                    level=data.get("level", current_level),
+                    size=data.get("size", ""),
+                    lyric=data.get("lyric", "")
+                )
+            except Exception as e:
+                last_error = e
+                continue
+        
+        if last_error:
+            raise NetEaseAPIError(f"获取歌曲信息失败: {last_error}")
+        raise NetEaseAPIError("未获取到任何可用的歌曲播放链接")
 
     async def get_song_url(self, song_id: int, level: str = "exhigh") -> str:
         """获取歌曲播放链接
