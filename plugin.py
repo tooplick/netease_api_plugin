@@ -210,7 +210,7 @@ async def send_netease_music(
             return f"歌曲《{song_name}》卡片已发送"
         
         # 7. 降级：发送文字 + 封面 + 语音
-        info_text = f"🎵 {song_name}\n🎤 歌手: {artists}"
+        info_text = f"{song_name} - {artists}"
         await send_message(bot, chat_type, target_id, info_text)
         
         # 发送封面
