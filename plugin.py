@@ -27,6 +27,12 @@ plugin = NekroPlugin(
 @plugin.mount_config()
 class NetEasePluginConfig(ConfigBase):
     """网易云音乐插件配置项"""
+
+    br: Literal["flac", "mp3"] = Field(
+        default="flac",
+        title="音质",
+        description="歌曲音质类型，可选 flac/mp3；获取失败时会自动降级",
+    )
     
     cover_size: Literal["0", "150", "300", "500", "800"] = Field(
         default="500",
@@ -258,7 +264,24 @@ async def send_netease_music(
         core.logger.info(f"找到歌曲: {song_name} - {artists} (ID: {song_id})")
         
         # 2. 通过 NodeJS API 获取完整播放链接
-        song_url = await get_song_url(song_id)
+        quality_br_map = {
+            "flac": "2000",
+            "mp3": "320",
+        }
+        selected_quality = config.br
+        selected_br = quality_br_map.get(selected_quality, "320")
+
+        try:
+            song_url = await get_song_url(song_id, selected_br)
+            actual_quality = selected_quality
+        except NetEaseAPIError:
+            if selected_quality == "flac":
+                core.logger.warning(f"FLAC 获取失败，自动降级为 MP3: {song_name}")
+                song_url = await get_song_url(song_id, quality_br_map["mp3"])
+                actual_quality = "mp3"
+            else:
+                raise
+
         core.logger.info(f"获取到播放链接: {song_url[:50]}...")
         
         # 3. 通过 Meting API 获取封面
@@ -297,6 +320,8 @@ async def send_netease_music(
         
         # 6. 卡片发送成功直接返回
         if card_sent:
+            if actual_quality != selected_quality:
+                return f"歌曲《{song_name}》卡片已发送（已从 FLAC 自动降级为 MP3）"
             return f"歌曲《{song_name}》卡片已发送"
         
         # 7. 降级：发送文字 + 封面 + 语音
@@ -323,6 +348,9 @@ async def send_netease_music(
             audio_msg = MessageSegment.record(song_url)
             await send_message(bot, chat_type, target_id, audio_msg)
         
+        if actual_quality != selected_quality:
+            return f"歌曲《{song_name}》已以(文字+封面+语音)方式发送（已从 FLAC 自动降级为 MP3）"
+
         return f"歌曲《{song_name}》已以(文字+封面+语音)方式发送"
         
     except NetEaseAPIError as e:

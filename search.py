@@ -37,10 +37,10 @@ async def search_song(keyword: str) -> dict[str, Any]:
         raise SearchError(f"搜索失败: {e}") from e
 
 
-async def get_song_url(song_id: int) -> str:
+async def get_song_url(song_id: int, br: str = "320") -> str:
     """通过 NodeJS API 获取完整歌曲播放链接"""
     api = get_api()
-    return await api.get_song_url(song_id)
+    return await api.get_song_url(song_id, br)
 
 
 async def get_cover_url(song_id: int) -> str:

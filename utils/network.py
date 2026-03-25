@@ -74,13 +74,14 @@ class NetEaseAPI:
         except httpx.HTTPError as e:
             raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
 
-    async def get_song_url(self, song_id: int) -> str:
+    async def get_song_url(self, song_id: int, br: str = "320") -> str:
         """通过 NodeJS API 获取歌曲播放链接（完整歌曲）
         
         和原项目 ncm_nodejs.py 一致：使用 /song/url?id=xxx
         
         Args:
             song_id: 歌曲 ID
+            br: 音质参数，通常为 2000(FLAC) 或 320(MP3)
         
         Returns:
             歌曲播放 URL
@@ -88,7 +89,7 @@ class NetEaseAPI:
         import httpx
         try:
             url = f"{self.base_url}/song/url"
-            params = {"id": song_id}
+            params = {"id": song_id, "br": br}
             resp = await self.client.get(url, params=params)
              # 强制使用 UTF-8 编码
             resp.encoding = "utf-8"
@@ -100,8 +101,12 @@ class NetEaseAPI:
                 audio_url = data[0].get("url")
                 if audio_url:
                     return audio_url
-            
-            raise NetEaseAPIError(f"未获取到歌曲链接")
+
+                free_trial_info = data[0].get("freeTrialInfo")
+                if free_trial_info:
+                    raise NetEaseAPIError("当前音质仅提供试听片段，无法获取完整歌曲链接")
+
+            raise NetEaseAPIError(f"未获取到歌曲链接，音质参数 br={br}")
         except NetEaseAPIError:
             raise
         except httpx.HTTPError as e:
