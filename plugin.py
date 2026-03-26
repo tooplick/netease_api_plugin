@@ -1,7 +1,6 @@
 """网易云音乐点歌插件"""
 
 from typing import Literal, Optional
-from urllib.parse import quote
 
 from pydantic import Field
 from nekro_agent.api.plugin import NekroPlugin, SandboxMethodType, ConfigBase
@@ -44,18 +43,6 @@ class NetEasePluginConfig(ConfigBase):
         default=True,
         title="启用音乐卡片",
         description="使用网易云音乐JSON卡片发送歌曲信息（失败时自动降级）",
-    )
-    
-    use_external_player: bool = Field(
-        default=False,
-        title="卡片链接使用外部播放器",
-        description="开启后，音乐卡片的主链接将跳转到外部播放器而非网易云官网",
-    )
-    
-    external_player_url: str = Field(
-        default="player.ygking.top",
-        title="外部播放器地址",
-        description="外部播放器的域名地址",
     )
 
 
@@ -108,34 +95,6 @@ async def send_message(bot, chat_type: str, target_id: int, message) -> bool:
         return False
 
 
-def clean_text(text: str) -> str:
-    """清理文本中的无效 Unicode 字符（如私用区字符、代理对、控制字符等）"""
-    if not text:
-        return text
-    
-    cleaned = []
-    for char in text:
-        code = ord(char)
-        # 1. 移除私用区字符 (U+E000-U+F8FF, U+F0000-U+FFFFD, U+100000-U+10FFFD)
-        if (0xE000 <= code <= 0xF8FF or 
-            0xF0000 <= code <= 0xFFFFD or
-            0x100000 <= code <= 0x10FFFD):
-            continue
-            
-        # 2. 移除代理对字符 (U+D800-U+DFFF)
-        if 0xD800 <= code <= 0xDFFF:
-            continue
-            
-        # 3. 移除控制字符 (U+0000-U+001F, U+007F)
-        # 保留换行符等可能需要的格式字符视情况而定，但 URL 参数中最好都去除
-        if code <= 0x1F or code == 0x7F:
-            continue
-            
-        cleaned.append(char)
-        
-    return ''.join(cleaned)
-
-
 def build_jump_url(
     song_id: int,
     song_name: str,
@@ -144,48 +103,7 @@ def build_jump_url(
     music_url: str
 ) -> str:
     """根据配置生成跳转 URL"""
-    if config.use_external_player:
-        # 使用外部播放器
-        base_url = config.external_player_url.rstrip("/")
-        # 简单验证 base_url 格式
-        if not base_url or len(base_url) > 200 or any(ord(c) > 127 for c in base_url):
-             # 如果配置的 URL 异常，回退到默认
-             core.logger.warning(f"检测到异常的外部播放器 URL 配置: {base_url}，已回退到默认")
-             base_url = "player.ygking.top"
-
-        if not base_url.startswith("http"):
-            base_url = f"https://{base_url}"
-        
-        # 清理无效字符并构建 URL 参数
-        clean_title = clean_text(str(song_name))
-        clean_artist = clean_text(str(artist))
-        
-        # 调试日志
-        if clean_title != str(song_name):
-             core.logger.debug(f"标题已清理: {repr(song_name)} -> {repr(clean_title)}")
-             
-        # 确保编码为 UTF-8
-        try:
-            quoted_title = quote(quote(clean_title, encoding='utf-8', safe=''), safe='')
-            quoted_artist = quote(quote(clean_artist, encoding='utf-8', safe=''), safe='')
-            quoted_cover = quote(str(cover_url), encoding='utf-8', safe='')
-            quoted_audio = quote(str(music_url), encoding='utf-8', safe='')
-            quoted_detail = quote(f'https://music.163.com/#/song?id={song_id}', encoding='utf-8', safe='')
-        except Exception as e:
-            core.logger.error(f"URL 参数编码失败: {e}")
-            return f"https://music.163.com/#/song?id={song_id}"
-
-        params = [
-            f"title={quoted_title}",
-            f"artist={quoted_artist}",
-            f"cover={quoted_cover}",
-            f"audio={quoted_audio}",
-            f"detail={quoted_detail}"
-        ]
-        return f"{base_url}/?{'&'.join(params)}"
-    else:
-        # 使用网易云官网
-        return f"https://music.163.com/#/song?id={song_id}"
+    return f"https://music.163.com/#/song?id={song_id}"
 
 
 async def get_signed_ark_card(
