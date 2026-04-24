@@ -5,23 +5,15 @@ from typing import Any
 from ..exceptions import NetEaseAPIError
 
 
-# 固定的 API 基础地址
-API_BASE_URL = "https://163api.qijieya.cn"
 METING_API = "https://api.qijieya.cn/meting/"
 
 
 class NetEaseAPI:
-    """网易云音乐 API 客户端"""
-    
+    """网易云音乐 API 客户端（基于 Meting API）"""
+
     DEFAULT_TIMEOUT = 10.0
-    
-    def __init__(self, base_url: str = API_BASE_URL):
-        """初始化 API 客户端
-        
-        Args:
-            base_url: 网易云 NodeJS API 服务基础地址
-        """
-        self.base_url = base_url.rstrip("/")
+
+    def __init__(self):
         self._client = None
     
     @property
@@ -44,118 +36,95 @@ class NetEaseAPI:
             self._client = None
     
     async def search(
-        self, 
-        keywords: str, 
-        type: int = 1, 
+        self,
+        keywords: str,
         limit: int = 1,
-        offset: int = 0
-    ) -> dict:
-        """通过网易云 API 搜索歌曲"""
+        page: int = 1
+    ) -> list:
+        """通过 Meting API 搜索歌曲"""
         import httpx
         try:
-            url = f"{self.base_url}/cloudsearch"
             params = {
-                "keywords": keywords,
-                "type": type,
+                "type": "search",
+                "id": keywords,
                 "limit": limit,
-                "offset": offset
+                "page": page,
+                "server": "netease",
             }
-            resp = await self.client.get(url, params=params)
-             # 强制使用 UTF-8 编码，防止中文乱码
+            resp = await self.client.get(METING_API, params=params)
             resp.encoding = "utf-8"
             resp.raise_for_status()
             data = resp.json()
-            
-            code = data.get("code", 200)
-            if code != 200:
-                raise NetEaseAPIError(f"API 返回错误: code={code}", data)
-            
+
+            if not isinstance(data, list):
+                raise NetEaseAPIError(f"API 返回格式异常: {type(data)}")
+
             return data
         except httpx.HTTPError as e:
             raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
 
     async def get_song_url(self, song_id: int, br: str = "320") -> str:
-        """通过 NodeJS API 获取歌曲播放链接（完整歌曲）
-        
-        和原项目 ncm_nodejs.py 一致：使用 /song/url?id=xxx
-        
+        """通过 Meting API 获取歌曲播放链接（302 重定向）
+
         Args:
             song_id: 歌曲 ID
-            br: 音质参数，通常为 2000(FLAC) 或 320(MP3)
-        
+            br: 音质参数，可选 2000/320/192/128
+
         Returns:
             歌曲播放 URL
         """
-        import httpx
+        if not song_id:
+            raise NetEaseAPIError("歌曲 ID 为空")
+
+        url = f"{METING_API}?type=url&id={song_id}&server=netease&br={br}"
         try:
-            url = f"{self.base_url}/song/url"
-            params = {"id": song_id, "br": br}
-            resp = await self.client.get(url, params=params)
-             # 强制使用 UTF-8 编码
-            resp.encoding = "utf-8"
+            resp = await self.client.get(url, follow_redirects=False)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                redirect_url = resp.headers.get("location")
+                if redirect_url:
+                    return redirect_url
             resp.raise_for_status()
-            result = resp.json()
-            
-            data = result.get("data", [])
-            if data and len(data) > 0:
-                audio_url = data[0].get("url")
-                if audio_url:
-                    return audio_url
-
-                free_trial_info = data[0].get("freeTrialInfo")
-                if free_trial_info:
-                    raise NetEaseAPIError("当前音质仅提供试听片段，无法获取完整歌曲链接")
-
-            raise NetEaseAPIError(f"未获取到歌曲链接，音质参数 br={br}")
-        except NetEaseAPIError:
-            raise
-        except httpx.HTTPError as e:
-            raise NetEaseAPIError(f"HTTP 请求失败: {e}") from e
+            return url
         except Exception as e:
             raise NetEaseAPIError(f"获取歌曲链接失败: {e}") from e
 
-    async def get_cover_url(self, song_id: int) -> str:
-        """通过 Meting API 获取封面链接（跟随重定向获取真实 URL）
-        
+    async def get_cover_url(self, pic_id: int, cover: str = "500") -> str:
+        """通过 Meting API 获取封面真实链接（302 重定向）
+
         Args:
-            song_id: 歌曲 ID
-        
+            pic_id: 封面 ID
+            cover: 封面分辨率，默认 500，可选 150/300/500/800
+
         Returns:
-            封面真实 URL（网易云 CDN 地址）
+            封面 URL
         """
-        import httpx
+        if not pic_id:
+            return ""
+
+        url = f"{METING_API}?type=pic&id={pic_id}&server=netease&cover={cover}"
         try:
-            url = f"{METING_API}?type=song&id={song_id}"
-            resp = await self.client.get(url)
-             # 强制使用 UTF-8 编码
-            resp.encoding = "utf-8"
+            resp = await self.client.get(url, follow_redirects=False)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                redirect_url = resp.headers.get("location")
+                if redirect_url:
+                    return redirect_url
             resp.raise_for_status()
-            result = resp.json()
-            
-            if isinstance(result, list) and len(result) > 0:
-                pic_redirect = result[0].get("pic", "")
-                if pic_redirect:
-                    # 跟随重定向获取真实封面 URL
-                    async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as redirect_client:
-                        pic_resp = await redirect_client.get(pic_redirect)
-                        # 返回最终 URL
-                        return str(pic_resp.url)
-            
-            return ""
+            return url
         except Exception as e:
-            # 封面获取失败不抛异常，返回空字符串
-            return ""
+            from ..api import core
+            core.logger.error(f"获取封面链接失败: {e}")
+            return url
 
 
 # 全局 API 实例
 _api_instance: NetEaseAPI | None = None
 
 
-def get_api(base_url: str | None = None) -> NetEaseAPI:
+def get_api() -> NetEaseAPI:
     """获取 API 实例"""
     global _api_instance
     if _api_instance is None:
-        _api_instance = NetEaseAPI(base_url or API_BASE_URL)
+        _api_instance = NetEaseAPI()
     return _api_instance
 
 

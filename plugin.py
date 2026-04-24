@@ -53,9 +53,8 @@ config: NetEasePluginConfig = plugin.get_config(NetEasePluginConfig)
 async def init_plugin():
     """初始化插件"""
     core.logger.info("网易云点歌插件正在初始化...")
-    # 使用固定的 API 地址
-    get_api("https://163api.qijieya.cn")
-    core.logger.success("网易云点歌插件初始化完成，API 地址: https://163api.qijieya.cn")
+    get_api()
+    core.logger.success("网易云点歌插件初始化完成")
 
 
 @plugin.mount_cleanup_method()
@@ -172,16 +171,19 @@ async def send_netease_music(
     """
     try:
         core.logger.info(f"正在搜索网易云音乐: {keyword}")
-        
-        # 1. 通过网易云 API 搜索歌曲
+
         song = await search_song(keyword)
         song_id = song.get("id")
         song_name = song.get("name", "未知歌曲")
         artists = song.get("artists", "未知")
-        
+        pic_id = song.get("pic_id")
+
+        if not song_id:
+            raise NetEaseAPIError("歌曲 ID 为空")
+
         core.logger.info(f"找到歌曲: {song_name} - {artists} (ID: {song_id})")
-        
-        # 2. 通过 NodeJS API 获取完整播放链接
+
+        # 1. 获取音乐链接（带音质降级）
         quality_br_map = {
             "flac": "2000",
             "mp3": "320",
@@ -189,23 +191,26 @@ async def send_netease_music(
         selected_quality = config.br
         selected_br = quality_br_map.get(selected_quality, "320")
 
+        actual_quality = selected_quality
         try:
             song_url = await get_song_url(song_id, selected_br)
-            actual_quality = selected_quality
+            core.logger.info(f"获取到 {selected_quality.upper()} 播放链接")
         except NetEaseAPIError:
             if selected_quality == "flac":
-                core.logger.warning(f"FLAC 获取失败，自动降级为 MP3: {song_name}")
+                core.logger.warning(f"FLAC 获取失败，自动降级为 MP3")
                 song_url = await get_song_url(song_id, quality_br_map["mp3"])
                 actual_quality = "mp3"
             else:
                 raise
 
-        core.logger.info(f"获取到播放链接: {song_url[:50]}...")
-        
-        # 3. 通过 Meting API 获取封面
-        cover_url = await get_cover_url(song_id)
-        if cover_url:
-            core.logger.info(f"获取到封面链接")
+        # 2. 获取封面
+        cover_url = ""
+        try:
+            cover_size = int(config.cover_size)
+            if cover_size > 0 and pic_id:
+                cover_url = await get_cover_url(pic_id, str(cover_size))
+        except Exception as e:
+            core.logger.error(f"获取封面失败: {e}")
         
         # 4. 解析 chat_key 并获取 bot
         adapter, chat_type, target_id = parse_chat_key(chat_key)
@@ -238,8 +243,6 @@ async def send_netease_music(
         
         # 6. 卡片发送成功直接返回
         if card_sent:
-            if actual_quality != selected_quality:
-                return f"歌曲《{song_name}》卡片已发送（已从 FLAC 自动降级为 MP3）"
             return f"歌曲《{song_name}》卡片已发送"
         
         # 7. 降级：发送文字 + 封面 + 语音
@@ -249,16 +252,18 @@ async def send_netease_music(
         # 发送封面
         cover_size = int(config.cover_size)
         if cover_size > 0 and cover_url:
-            # 替换封面尺寸参数
-            if "?param=" in cover_url:
-                # 替换已有的尺寸参数
-                import re
-                sized_cover = re.sub(r'\?param=\d+y\d+', f'?param={cover_size}y{cover_size}', cover_url)
-            else:
-                sized_cover = f"{cover_url}?param={cover_size}y{cover_size}"
-            from nonebot.adapters.onebot.v11 import MessageSegment
-            cover_msg = MessageSegment.image(sized_cover)
-            await send_message(bot, chat_type, target_id, cover_msg)
+            try:
+                if "?param=" in cover_url:
+                    import re
+                    sized_cover = re.sub(r'\?param=\d+y\d+', f'?param={cover_size}y{cover_size}', cover_url)
+                else:
+                    sized_cover = f"{cover_url}?param={cover_size}y{cover_size}"
+
+                from nonebot.adapters.onebot.v11 import MessageSegment
+                cover_msg = MessageSegment.image(sized_cover)
+                await send_message(bot, chat_type, target_id, cover_msg)
+            except Exception as e:
+                core.logger.error(f"发送封面失败: {e}")
         
         # 发送语音
         if song_url:
@@ -266,11 +271,8 @@ async def send_netease_music(
             audio_msg = MessageSegment.record(song_url)
             await send_message(bot, chat_type, target_id, audio_msg)
         
-        if actual_quality != selected_quality:
-            return f"歌曲《{song_name}》已以(文字+封面+语音)方式发送（已从 FLAC 自动降级为 MP3）"
-
         return f"歌曲《{song_name}》已以(文字+封面+语音)方式发送"
-        
+
     except NetEaseAPIError as e:
         core.logger.error(f"网易云 API 错误: {e}")
         return f"点歌失败: {e.message}"

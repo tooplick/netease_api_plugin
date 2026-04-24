@@ -48,8 +48,7 @@ netease_api_plugin/
 
 ## 🔌 API 来源
 
-- **搜索/音频**: [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)
-- **封面**: [Meting API](https://github.com/metowolf/Meting)
+- **网易云api**: [Meting API](https://github.com/metowolf/Meting)
 - **卡片签名**: [OiAPI](https://oiapi.net/)
 
 ## 👤 作者
